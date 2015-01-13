@@ -1,0 +1,214 @@
+#!/usr/bin/python
+#   -*- coding: utf-8 -*-
+#
+#   Author:   Jan Christoph Uhde < linux (a) obiwahn org>
+#
+#   Requires: Python poster module - http://atlee.ca/software/poster/
+#             BeautifulSoup - http://www.crummy.com/software/BeautifulSoup/
+#
+#             Debian: apt-get install python-poster python-beautifulsoup
+#
+help_str="""
+postimage - file upload script for postimage.org
+
+Synopsis:
+    postimage [options] [filelist|-]
+Options (not implemented):
+    --help,  -h                      help -- this page
+    --type=<type>,-t <type>          set type of returned link
+                                     possible types: url, html, bbcode, bbcode2
+    --nonames, -n                    disable printing of filenames
+    --del, -d                        show url of upload deletion page
+    --adult, -a                      flag upload as adult content
+    --nolog                          disable logging to ~/.postimage.log
+"""
+                                                                                #
+    #--username=<name>,-u <name>          username (not implemented)
+    #--password=<pass>, -p <pass>         password (not implemented)
+
+#
+#   TODO:
+#   more structured use of exceptions
+#   upload multiple files in one go. (i'll do it if somebody requests)
+#   resize option (this could be useful)
+#   log into account (who needs that?!)
+#
+#   better modules: logger, argparse
+
+import sys
+import os
+import getopt
+#from pprint import pprint
+
+import urllib2
+from BeautifulSoup import BeautifulSoup
+
+from poster.encode import *
+from poster.streaminghttp import register_openers
+register_openers() #register poster opener
+
+logfile=os.path.expanduser("~/.postimage.log")
+
+
+class Usage(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+
+def upload(file_list=None,content=None,adult_content="no",link_type="url",username=None,passwd=None):
+    if not (file_list or content):
+        return (None,None)
+
+    request_url = "http://www.postimage.org/index.php"
+    multipart_dict={}
+    multipart_dict['adult']=adult_content
+
+    if content:
+        image_obj=MultipartParam(name='upload',filename='stdin',filetype='image',value=content)
+        datagen, headers = multipart_encode([('adult',multipart_dict['adult']),image_obj])
+        request=urllib2.Request(request_url, datagen, headers)
+        url = urllib2.urlopen(request)
+
+    elif not content and len(file_list) == 1:
+        path=file_list[0]
+        with open(os.path.abspath(path), "rb") as f:
+            multipart_dict['upload']=f
+            datagen, headers = multipart_encode(multipart_dict)
+            #print datagen.__dict__['params'][1].__dict__
+            request=urllib2.Request(request_url, datagen, headers)
+            url = urllib2.urlopen(request)
+    else:
+        #upload code for multipe files - here
+        print >>sys.stderr, "This happened probably due to an invalid file or a bug in the script."
+        sys.exit(2)
+
+    reply = url.read()
+    url.close()
+
+    soup = BeautifulSoup(reply)
+    parsed_soup=soup.findAll("textarea")
+    if link_type == "url":
+        post = parsed_soup[0].string.strip()
+    elif link_type == "bbcode":
+        post = parsed_soup[1].string.strip()
+    elif link_type == "bbcode2":
+        post = parsed_soup[2].string.strip()
+    elif link_type == "html":
+        post = parsed_soup[3].string.strip()
+
+    del_link = parsed_soup[4].string.strip()
+
+    return (post,del_link)
+
+
+def handle_post(name,post,nonames,deletion_link,nolog):
+    if post[0] and post[1]:
+        ret_str=post[0]
+        if not nonames:
+            ret_str=name + ": " + ret_str
+        if deletion_link:
+            ret_str=ret_str + "\ndeletion link: " + post[1]
+        print ret_str
+
+        if not nolog:
+            f = open(logfile, 'a+')
+            try:
+                f.write("\n".join([name,post[0],post[1],"\n"]))
+            finally:
+                f.close()
+    else:
+        pass
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
+    try:
+        try:
+            opts, file_list = getopt.getopt(
+                argv[1:],
+                "hat:ndu:p:l",
+                ["help","adult","type=","nonames","del","user=","password=","nolog"]
+            )
+        except getopt.error, msg:
+            raise Usage(msg)
+
+        opts_dict={}
+        deletion_link=False
+        nonames=False
+        nolog=False
+        multifile=False
+        for o,a in opts:
+            if o in ['--help', '-h']:
+                print help_str
+                return 0
+            if o in ['--adult','-a']:
+                opts_dict['adult_content']="yes"
+            if o in ['--type','-t']:
+                if a in ['url','bbcode','html']:
+                    opts_dict['link_type']=a
+                else:
+                    raise Usage("valid type: url bbcode html")
+            if o in ['--username', '-u']:
+                opts_dict['username']=a
+            if o in ['--password','-p']:
+                opts_dict['password']=a
+            if o in ['--nonames','-n']:
+                nonames=True
+            if o in ['--del','-d']:
+                deletion_link=True
+            if o == '--nolog':
+                nolog=True
+
+        if not nolog:
+            try:
+                f = open(logfile, 'a+')
+                f.close()
+            except IOError:
+                print >>sys.stderr, "No access to logfile"
+                return 2
+
+        content=None
+        post=None
+        if file_list in [[],["-"]]:
+            try:
+                content=sys.stdin.read()
+                opts_dict['content']=content
+                post = upload(**opts_dict)
+            except:
+                print >>sys.stderr, "failed to upload from stdin"
+                raise
+            if post:
+                handle_post("stdin",post,nonames,deletion_link,nolog)
+            return 0
+        if not multifile:
+            for item in file_list:
+                post=None
+                try:
+                    opts_dict['file_list']=[item]
+                    post = upload(**opts_dict)
+                except:
+                    print >>sys.stderr, item + ": failed to upload"
+                    #raise
+                if post:
+                    handle_post(item,post,nonames,deletion_link,nolog)
+            return 0
+        return 2
+
+
+    except Usage, err:
+        print >>sys.stderr, err.msg
+        print >>sys.stderr, "for help use --help"
+        return 2
+
+    except KeyboardInterrupt:
+        print >>sys.stderr, "KeyboardInterrupt caught."
+        return 2
+
+    except:
+        print >>sys.stderr, "This happened probably due to an invalid file or a bug in the script."
+        #raise
+
+
+if __name__ == "__main__":
+        sys.exit(main())
