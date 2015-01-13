@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/usr/bin/diff -u5 -w "$@"
