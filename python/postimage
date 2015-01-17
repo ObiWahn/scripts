@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 #   -*- coding: utf-8 -*-
 #
 #   Author:   Jan Christoph Uhde < linux (a) obiwahn org>
@@ -40,8 +40,9 @@ import os
 import getopt
 #from pprint import pprint
 
-import urllib2
-from BeautifulSoup import BeautifulSoup
+import urllib3
+from bs4 import BeautifulSoup
+
 
 from poster.encode import *
 from poster.streaminghttp import register_openers
@@ -108,7 +109,7 @@ def handle_post(name,post,nonames,deletion_link,nolog):
             ret_str=name + ": " + ret_str
         if deletion_link:
             ret_str=ret_str + "\ndeletion link: " + post[1]
-        print ret_str
+        print(ret_str)
 
         if not nolog:
             f = open(logfile, 'a+')
@@ -130,7 +131,7 @@ def main(argv=None):
                 "hat:ndu:p:l",
                 ["help","adult","type=","nonames","del","user=","password=","nolog"]
             )
-        except getopt.error, msg:
+        except getopt.error as msg:
             raise Usage(msg)
 
         opts_dict={}
@@ -140,7 +141,7 @@ def main(argv=None):
         multifile=False
         for o,a in opts:
             if o in ['--help', '-h']:
-                print help_str
+                print(help_str)
                 return 0
             if o in ['--adult','-a']:
                 opts_dict['adult_content']="yes"
@@ -187,16 +188,16 @@ def main(argv=None):
                 try:
                     opts_dict['file_list']=[item]
                     post = upload(**opts_dict)
-                except:
+                except Exception as e:
                     print >>sys.stderr, item + ": failed to upload"
-                    #raise
+                    raise e
                 if post:
                     handle_post(item,post,nonames,deletion_link,nolog)
             return 0
         return 2
 
 
-    except Usage, err:
+    except Usage as err:
         print >>sys.stderr, err.msg
         print >>sys.stderr, "for help use --help"
         return 2
