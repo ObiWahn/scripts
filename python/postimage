@@ -37,16 +37,20 @@ Options (not implemented):
 
 import sys
 import os
+import traceback
 import getopt
-#from pprint import pprint
+from pprint import pprint  as P
+from pprint import pformat as PF
 
-import urllib3
+import urllib3 as urllib
 from bs4 import BeautifulSoup
 
+import logging
 
-from poster.encode import *
-from poster.streaminghttp import register_openers
-register_openers() #register poster opener
+
+#from poster.encode import *
+#from poster.streaminghttp import register_openers
+#register_openers() #register poster opener
 
 logfile=os.path.expanduser("~/.postimage.log")
 
@@ -67,8 +71,8 @@ def upload(file_list=None,content=None,adult_content="no",link_type="url",userna
     if content:
         image_obj=MultipartParam(name='upload',filename='stdin',filetype='image',value=content)
         datagen, headers = multipart_encode([('adult',multipart_dict['adult']),image_obj])
-        request=urllib2.Request(request_url, datagen, headers)
-        url = urllib2.urlopen(request)
+        request=urllib.Request(request_url, datagen, headers)
+        url = urllib.urlopen(request)
 
     elif not content and len(file_list) == 1:
         path=file_list[0]
@@ -76,8 +80,8 @@ def upload(file_list=None,content=None,adult_content="no",link_type="url",userna
             multipart_dict['upload']=f
             datagen, headers = multipart_encode(multipart_dict)
             #print datagen.__dict__['params'][1].__dict__
-            request=urllib2.Request(request_url, datagen, headers)
-            url = urllib2.urlopen(request)
+            request=urllib.Request(request_url, datagen, headers)
+            url = urllib.urlopen(request)
     else:
         #upload code for multipe files - here
         print >>sys.stderr, "This happened probably due to an invalid file or a bug in the script."
