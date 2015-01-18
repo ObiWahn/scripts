@@ -39,59 +39,65 @@ import sys
 import os
 import traceback
 import getopt
-from pprint import pprint  as P
-from pprint import pformat as PF
-
 import urllib3 as urllib
 from bs4 import BeautifulSoup
 
+from pprint import pprint  as P
+from pprint import pformat as PF
+import traceback
 import logging
-
-
-#from poster.encode import *
-#from poster.streaminghttp import register_openers
-#register_openers() #register poster opener
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 logfile=os.path.expanduser("~/.postimage.log")
 
+
+
+http = urllib.PoolManager()
 
 class Usage(Exception):
     def __init__(self, msg):
         self.msg = msg
 
-
 def upload(file_list=None,content=None,adult_content="no",link_type="url",username=None,passwd=None):
+    """
+        file_list - files read from commandline
+        content   - content of one file read from stdin
+    """
+
     if not (file_list or content):
         return (None,None)
 
+    if file_list and content:
+        logger.error("you can not read from stdin and files")
+        return(None,None)
+
     request_url = "http://www.postimage.org/index.php"
-    multipart_dict={}
+    multipart_dict={} #fields in urllib3 terms
     multipart_dict['adult']=adult_content
 
-    if content:
-        image_obj=MultipartParam(name='upload',filename='stdin',filetype='image',value=content)
-        datagen, headers = multipart_encode([('adult',multipart_dict['adult']),image_obj])
-        request=urllib.Request(request_url, datagen, headers)
-        url = urllib.urlopen(request)
+    datagen=None
+    headers=None
 
-    elif not content and len(file_list) == 1:
-        path=file_list[0]
-        with open(os.path.abspath(path), "rb") as f:
-            multipart_dict['upload']=f
-            datagen, headers = multipart_encode(multipart_dict)
-            #print datagen.__dict__['params'][1].__dict__
-            request=urllib.Request(request_url, datagen, headers)
-            url = urllib.urlopen(request)
-    else:
-        #upload code for multipe files - here
-        print >>sys.stderr, "This happened probably due to an invalid file or a bug in the script."
-        sys.exit(2)
+    # encode - data
+    # for now the list may contain only one item
+    if file_list:
+        for image_file in file_list:
+            with open(os.path.abspath(image_file), "rb") as fh:
+                content = fh.read()
+                multipart_dict['upload'] = (image_file, content, 'image')
 
-    reply = url.read()
-    url.close()
+    else: #if content
+        multipart_dict['upload'] = (image_file, content, 'image')
 
+    #encode
+    request = http.request('POST', request_url, fields=multipart_dict)
+    reply = request.data
+
+    # handle reply with soup
     soup = BeautifulSoup(reply)
     parsed_soup=soup.findAll("textarea")
+
     if link_type == "url":
         post = parsed_soup[0].string.strip()
     elif link_type == "bbcode":
@@ -170,7 +176,7 @@ def main(argv=None):
                 f = open(logfile, 'a+')
                 f.close()
             except IOError:
-                print >>sys.stderr, "No access to logfile"
+                logger.error("No access to logfile")
                 return 2
 
         content=None
@@ -181,7 +187,7 @@ def main(argv=None):
                 opts_dict['content']=content
                 post = upload(**opts_dict)
             except:
-                print >>sys.stderr, "failed to upload from stdin"
+                logger.error("failed to upload from stdin")
                 raise
             if post:
                 handle_post("stdin",post,nonames,deletion_link,nolog)
@@ -193,7 +199,7 @@ def main(argv=None):
                     opts_dict['file_list']=[item]
                     post = upload(**opts_dict)
                 except Exception as e:
-                    print >>sys.stderr, item + ": failed to upload"
+                    logger.error(item + ": failed to upload")
                     raise e
                 if post:
                     handle_post(item,post,nonames,deletion_link,nolog)
@@ -202,16 +208,17 @@ def main(argv=None):
 
 
     except Usage as err:
-        print >>sys.stderr, err.msg
-        print >>sys.stderr, "for help use --help"
+        logger.error(err.msg)
+        logger.error("for help use --help")
         return 2
 
     except KeyboardInterrupt:
-        print >>sys.stderr, "KeyboardInterrupt caught."
+        logger.error("KeyboardInterrupt caught.")
         return 2
 
-    except:
-        print >>sys.stderr, "This happened probably due to an invalid file or a bug in the script."
+    except Exception as e:
+        traceback.print_exc()
+        logger.error("This happened probably due to an invalid file or a bug in the script.")
         #raise
 
 
