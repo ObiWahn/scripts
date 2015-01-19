@@ -45,14 +45,13 @@ from bs4 import BeautifulSoup
 from pprint import pprint  as P
 from pprint import pformat as PF
 import traceback
+import argparse
 import logging
+
+parser = argparse.ArgumentParser()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-
 logfile=os.path.expanduser("~/.postimage.log")
-
-
-
 http = urllib.PoolManager()
 
 class Usage(Exception):
@@ -132,53 +131,47 @@ def handle_post(name,post,nonames,deletion_link,nolog):
 
 
 def main(argv=None):
-    if argv is None:
-        argv = sys.argv
+    parser.add_argument("--adult",    action='store_true', help="contains adult content")
+    parser.add_argument("--nolog",    action='store_true', help="increase output verbosity" )
+    parser.add_argument("--nonames",  action='store_true', help="bla ...")
+    parser.add_argument("--delete",   action='store_true', help="bla ...")
+    parser.add_argument("--type",     nargs='?', choices=['url', 'bbcode','html'], default='url', help="bla ...")
+    parser.add_argument("--username", nargs=1  , help="bla ...")
+    parser.add_argument("--password", nargs=1  , help="bla ...")
+    parser.add_argument("file",       nargs='*', help="files to upload")
+    args = parser.parse_args()
+
+    opts_dict = {}
+    deletion_link = False
+    nonames = False
+    nolog = False
+    multifile = False
+    file_list = args.file
+    opts_dict['link_type'] = args.type
+
+    if args.adult:
+        opts_dict['adult_content']='yes'
+    else:
+        opts_dict['adult_content']='no'
+
+    if args.nolog:
+        nolog=True
+
+    if args.delete:
+        deletion_link=True
+
+    if args.nonames:
+        nonames=True
+
+    #opts_dict['username']=a
+    #opts_dict['password']=a
+
+    if not args.nolog:
+        if not os.access(logfile, os.W_OK):
+            logger.error("No access to logfile")
+            return 2
+
     try:
-        try:
-            opts, file_list = getopt.getopt(
-                argv[1:],
-                "hat:ndu:p:l",
-                ["help","adult","type=","nonames","del","user=","password=","nolog"]
-            )
-        except getopt.error as msg:
-            raise Usage(msg)
-
-        opts_dict={}
-        deletion_link=False
-        nonames=False
-        nolog=False
-        multifile=False
-        for o,a in opts:
-            if o in ['--help', '-h']:
-                print(help_str)
-                return 0
-            if o in ['--adult','-a']:
-                opts_dict['adult_content']="yes"
-            if o in ['--type','-t']:
-                if a in ['url','bbcode','html']:
-                    opts_dict['link_type']=a
-                else:
-                    raise Usage("valid type: url bbcode html")
-            if o in ['--username', '-u']:
-                opts_dict['username']=a
-            if o in ['--password','-p']:
-                opts_dict['password']=a
-            if o in ['--nonames','-n']:
-                nonames=True
-            if o in ['--del','-d']:
-                deletion_link=True
-            if o == '--nolog':
-                nolog=True
-
-        if not nolog:
-            try:
-                f = open(logfile, 'a+')
-                f.close()
-            except IOError:
-                logger.error("No access to logfile")
-                return 2
-
         content=None
         post=None
         if file_list in [[],["-"]]:
