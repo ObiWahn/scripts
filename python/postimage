@@ -22,8 +22,7 @@ Options (not implemented):
     --adult, -a                      flag upload as adult content
     --nolog                          disable logging to ~/.postimage.log
 """
-                                                                                #
-
+#
 #   TODO:
 #   more structured use of exceptions
 #   upload multiple files in one go. (i'll do it if somebody requests)
@@ -54,22 +53,39 @@ class Usage(Exception):
     def __init__(self, msg):
         self.msg = msg
 
-def upload(file_list=None,content=None,adult_content="no",link_type="url",username=None,passwd=None):
+class Internal(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+
+class postimage_links(object):
+    def __init__(self, main = None, url = None, delete = None):
+        self.main = main
+        self.url = url
+        self.delete = delete
+    def __str__(self):
+        return  ( "main:   " + str(self.main)   + "\n" +
+                  "delete: " + str(self.delete) + "\n"
+                )
+
+
+def upload(file_list = None, content = None,
+           adult_content = "no", link_type = "url",
+           username = None, passwd = None):
     """
         file_list - files read from commandline
         content   - content of one file read from stdin
     """
 
     if not (file_list or content):
-        return (None,None)
+        return (None, None)
 
     if file_list and content:
         logger.error("you can not read from stdin and files")
-        return(None,None)
+        return (None, None)
 
     request_url = "http://www.postimage.org/index.php"
     multipart_dict={} #fields in urllib3 terms
-    multipart_dict['adult']=adult_content
+    multipart_dict['adult'] = adult_content
 
     datagen=None
     headers=None
@@ -93,48 +109,43 @@ def upload(file_list=None,content=None,adult_content="no",link_type="url",userna
     soup = BeautifulSoup(reply)
     parsed_soup=soup.findAll("textarea")
 
-    if link_type == "url":
-        post = parsed_soup[0].string.strip()
-    elif link_type == "bbcode":
-        post = parsed_soup[1].string.strip()
-    elif link_type == "bbcode2":
-        post = parsed_soup[2].string.strip()
-    elif link_type == "html":
-        post = parsed_soup[3].string.strip()
+    links = postimage_links()
+    links.main    = parsed_soup[0].string.strip()
+    links.url     = parsed_soup[0].string.strip()
+    links.bbcode  = parsed_soup[1].string.strip()
+    links.bbcode2 = parsed_soup[2].string.strip()
+    links.html    = parsed_soup[3].string.strip()
+    links.delete  = parsed_soup[4].string.strip()
 
-    del_link = parsed_soup[4].string.strip()
+    return links
 
-    return (post,del_link)
-
-
-def handle_post(name,post,nonames,deletion_link,nolog):
-    if post[0] and post[1]:
-        ret_str=post[0]
+def handle_post(full_path, links, nonames, nolog):
+    if links.main and links.delete:
+        mesage=""
         if not nonames:
-            ret_str=name + ": " + ret_str
-        if deletion_link:
-            ret_str=ret_str + "\ndeletion link: " + post[1]
-        print(ret_str)
+            message = full_path + ":\n"
+        if links.url:
+            message += ("url link:      " + links.url + "\n")
+        if links.delete:
+            message += ("deletion link: " + links.delete + "\n")
+
+        print(message)
 
         if not nolog:
-            f = open(logfile, 'a+')
-            try:
-                f.write("\n".join([name,post[0],post[1],"\n"]))
-            finally:
-                f.close()
+            with open(logfile, 'a+') as f:
+                f.write("\n".join([full_path,links.main,links.delete,"\n"]))
     else:
-        pass
-
+        raise Internal("Not all links could be retrieved after the upload")
 
 def main(argv=None):
-    parser.add_argument("--adult",    action='store_true', help="contains adult content")
-    parser.add_argument("--nolog",    action='store_true', help="increase output verbosity" )
-    parser.add_argument("--nonames",  action='store_true', help="bla ...")
-    parser.add_argument("--delete",   action='store_true', help="bla ...")
-    parser.add_argument("--type",     nargs='?', choices=['url', 'bbcode','html'], default='url', help="bla ...")
-    parser.add_argument("--username", nargs=1  , help="bla ...")
-    parser.add_argument("--password", nargs=1  , help="bla ...")
-    parser.add_argument("file",       nargs='*', help="files to upload")
+    parser.add_argument("--adult",    action = 'store_true', help = "contains adult content")
+    parser.add_argument("--nolog",    action = 'store_true', help = "increase output verbosity" )
+    parser.add_argument("--nonames",  action = 'store_true', help = "bla ...")
+    parser.add_argument("--delete",   action = 'store_true', help = "bla ...")
+    parser.add_argument("--type",     nargs = '?', choices = ['url', 'bbcode','html'], default = 'url', help = "bla ...")
+    parser.add_argument("--username", nargs = 1  , help = "bla ...")
+    parser.add_argument("--password", nargs = 1  , help = "bla ...")
+    parser.add_argument("file",       nargs = '*', help = "files to upload")
     args = parser.parse_args()
 
     opts_dict = {}
@@ -146,18 +157,18 @@ def main(argv=None):
     opts_dict['link_type'] = args.type
 
     if args.adult:
-        opts_dict['adult_content']='yes'
+        opts_dict['adult_content'] = 'yes'
     else:
-        opts_dict['adult_content']='no'
+        opts_dict['adult_content'] = 'no'
 
     if args.nolog:
-        nolog=True
+        nolog = True
 
     if args.delete:
-        deletion_link=True
+        deletion_link = True
 
     if args.nonames:
-        nonames=True
+        nonames = True
 
     if not args.nolog:
         if not os.access(logfile, os.W_OK):
@@ -165,30 +176,30 @@ def main(argv=None):
             return 2
 
     try:
-        content=None
-        post=None
+        content = None
+        links = None
         if file_list in [[],["-"]]:
             try:
-                content=sys.stdin.read()
-                opts_dict['content']=content
-                post = upload(**opts_dict)
+                content = sys.stdin.read()
+                opts_dict['content'] = content
+                links = upload(**opts_dict)
             except:
                 logger.error("failed to upload from stdin")
                 raise
-            if post:
-                handle_post("stdin",post,nonames,deletion_link,nolog)
+            if links:
+                handle_post("stdin", links, nonames, nolog)
             return 0
         if not multifile:
-            for item in file_list:
-                post=None
+            for file_with_path in file_list:
+                post = None
                 try:
-                    opts_dict['file_list']=[item]
-                    post = upload(**opts_dict)
+                    opts_dict['file_list'] = [file_with_path]
+                    links = upload(**opts_dict)
                 except Exception as e:
                     logger.error(item + ": failed to upload")
                     raise e
-                if post:
-                    handle_post(item,post,nonames,deletion_link,nolog)
+                if links:
+                    handle_post(file_with_path, links, nonames, nolog)
             return 0
         return 2
 
@@ -206,7 +217,6 @@ def main(argv=None):
         traceback.print_exc()
         logger.error("This happened probably due to an invalid file or a bug in the script.")
         #raise
-
 
 if __name__ == "__main__":
         sys.exit(main())
