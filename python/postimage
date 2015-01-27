@@ -41,10 +41,8 @@ from bs4 import BeautifulSoup
 from pprint import pprint  as P
 from pprint import pformat as PF
 import traceback
-import argparse
 import logging
 
-parser = argparse.ArgumentParser()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logfile=os.path.expanduser("~/.postimage.log")
@@ -74,7 +72,9 @@ class postimage_links(object):
                 )
 
 
-def upload(file_list = None, content = None,
+def upload(file_list = None, content = None, 
+           multifile = False, nonames = False,
+           deletion_link = False, nolog = True,
            adult_content = "no", link_type = "url",
            username = None, passwd = None):
     """
@@ -134,44 +134,16 @@ def handle_post(links, nonames, nolog):
     else:
         raise Internal("Not all links could be retrieved after the upload")
 
-def main(argv=None):
-    parser.add_argument("--adult",    action = 'store_true', help = "contains adult content")
-    parser.add_argument("--nolog",    action = 'store_true', help = "increase output verbosity" )
-    parser.add_argument("--nonames",  action = 'store_true', help = "bla ...")
-    parser.add_argument("--delete",   action = 'store_true', help = "bla ...")
-    parser.add_argument("--type",     nargs  = '?', choices = ['url', 'bbcode','html'], default = 'url', help = "bla ...")
-    parser.add_argument("--username", nargs  = 1  , help = "bla ...")
-    parser.add_argument("--password", nargs  = 1  , help = "bla ...")
-    parser.add_argument("file",       nargs  = '*', help = "files to upload")
-    args = parser.parse_args()
+def main(opts_dict):
 
-    opts_dict = {}
-    deletion_link = False
-    nonames = False
-    nolog = False
-    multifile = False
-    file_list = args.file
-    opts_dict['link_type'] = args.type
-
-    if args.adult:
-        opts_dict['adult_content'] = 'yes'
-    else:
-        opts_dict['adult_content'] = 'no'
-    if args.nolog:
-        nolog = True
-    if args.delete:
-        deletion_link = True
-    if args.nonames:
-        nonames = True
-
-    if not args.nolog:
+    if not opts_dict['nolog']:
         if not os.access(logfile, os.W_OK):
             raise Usage("No access to logfile - make sure ~/.postimage.log is accessible")
 
     try:
         content = None
         links = None
-        if file_list in [[],["-"]]:
+        if opts_dict['file_list'] in [[],["-"]]:
             try:
                 content = sys.stdin.read()
                 opts_dict['content'] = content
@@ -179,10 +151,11 @@ def main(argv=None):
             except Exception as ex:
                 raise Internal("Failed to upload from stdin")
             if links:
-                handle_post(links, nonames, nolog)
+                handle_post(links, opts_dict['nonames'], opts_dict['nolog'])
             return 0
-        if not multifile:
-            for file_with_path in file_list:
+        #so we are not reading form stdin
+        if not opts_dict['multifile']:
+            for file_with_path in opts_dict['file_list']:
                 post = None
                 try:
                     opts_dict['file_list'] = [file_with_path]
@@ -191,7 +164,7 @@ def main(argv=None):
                     logger.error(item + ": failed to upload")
                     raise e
                 if links:
-                    handle_post(links, nonames, nolog)
+                    handle_post(links, opts_dict['nonames'], opts_dict['nolog'])
             return 0
         return 2
 
@@ -213,5 +186,40 @@ def main(argv=None):
         logger.error("This happened probably due to an invalid file or a bug in the script.")
         raise ex
 
+
+def parse_options():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--adult",    action = 'store_true', help = "contains adult content")
+    parser.add_argument("--nolog",    action = 'store_true', help = "increase output verbosity" )
+    parser.add_argument("--nonames",  action = 'store_true', help = "bla ...")
+    parser.add_argument("--delete",   action = 'store_true', help = "bla ...")
+    parser.add_argument("--type",     nargs  = '?', choices = ['url', 'bbcode','html'], default = 'url', help = "bla ...")
+    parser.add_argument("--username", nargs  = 1  , help = "bla ...")
+    parser.add_argument("--password", nargs  = 1  , help = "bla ...")
+    parser.add_argument("file",       nargs  = '*', help = "files to upload")
+    args = parser.parse_args()
+
+    opts_dict = {
+        'adult_content' : 'no',
+        'nolog'         : False,
+        'deletion_link' : False,
+        'nonames'       : False,
+        'multifile'     : False,
+        'file_list'     : args.file,
+        'link_type'     : args.type
+    }
+
+    if args.adult:
+        opts_dict['adult_content'] = 'yes'
+    if args.nolog:
+        opts_dict['nolog'] = True
+    if args.delete:
+        opts_dict['deletion_link'] = True
+    if args.nonames:
+       opts_dict['nonames'] = True
+
+    return(main(opts_dict))
+
 if __name__ == "__main__":
-        sys.exit(main())
+    sys.exit(parse_options())
