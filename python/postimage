@@ -45,7 +45,7 @@ import logging
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-logfile=os.path.expanduser("~/.postimage.log")
+logfile = os.path.expanduser("~/.postimage.log")
 http = urllib.PoolManager()
 
 class Usage(Exception):
@@ -113,7 +113,7 @@ def upload(file_list = None, content = None,
     reply = request.data
 
     # handle reply with soup
-    soup = BeautifulSoup(reply)
+    soup = BeautifulSoup(reply, "lxml")
     parsed_soup=soup.findAll("textarea")
 
     links = postimage_links(", ".join(file_list))
@@ -190,14 +190,14 @@ def main(opts_dict):
 def parse_options():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--adult",    action = 'store_true', help = "contains adult content")
-    parser.add_argument("--nolog",    action = 'store_true', help = "increase output verbosity" )
-    parser.add_argument("--nonames",  action = 'store_true', help = "bla ...")
-    parser.add_argument("--delete",   action = 'store_true', help = "bla ...")
-    parser.add_argument("--type",     nargs  = '?', choices = ['url', 'bbcode','html'], default = 'url', help = "bla ...")
-    parser.add_argument("--username", nargs  = 1  , help = "bla ...")
-    parser.add_argument("--password", nargs  = 1  , help = "bla ...")
-    parser.add_argument("file",       nargs  = '*', help = "files to upload")
+    parser.add_argument("--adult",        action = 'store_true', help = "contains adult content")
+    parser.add_argument("--nolog",        action = 'store_true', help = "increase output verbosity" )
+    parser.add_argument("--nonames",      action = 'store_true', help = "bla ...")
+    parser.add_argument("--delete", "-d", action = 'store_true', help = "show deletion link")
+    parser.add_argument("--type",         nargs  = '?', choices = ['url', 'bbcode','html'], default = 'url', help = "bla ...")
+    parser.add_argument("--username",     nargs  = 1  , help = "bla ...")
+    parser.add_argument("--password",     nargs  = 1  , help = "bla ...")
+    parser.add_argument("file",           nargs  = '*', help = "files to upload")
     args = parser.parse_args()
 
     opts_dict = {
