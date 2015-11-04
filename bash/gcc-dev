@@ -1,0 +1,9 @@
+#!/bin/bash
+# Copyright - 2015 - Jan Christoph Uhde <Jan@UhdeJC.com>
+
+# modify run_path to match your system
+run_path=/opt/gcc_dev_r1337
+
+name=$(basename "${BASH_SOURCE[0]}")
+export LD_RUN_PATH=${run_path}/lib64
+${run_path}/bin/${name} "$@"
