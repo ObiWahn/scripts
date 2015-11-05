@@ -1,5 +1,15 @@
 #!/bin/bash
 # Copyright - 2015 - Jan Christoph Uhde <Jan@UhdeJC.com>
+#
+# Put this file in you ~/.bin directory and add symlinks to the binaries to
+# the files you want to call in run_path.
+#
+# e.g:
+# to call /opt/gcc_dev_r1337/bin/gcc-6
+# create a symlink:
+# cd ~/.bin; ln -s gcc-dev gcc-6
+# and set:
+# run_path=/opt/gcc_dev_r1337
 
 # modify run_path to match your system
 run_path=/opt/gcc_dev_r1337
