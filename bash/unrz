@@ -1,0 +1,116 @@
+#!/bin/bash
+
+#
+# All Purpose Extractor Wrapper
+#
+# Extracts all common file formats. And puts the content in a target directory
+# named after the archive. In case the newly created directory contains nothing
+# but a single subdirectory this subdirectory will get moved down in the tree
+# while the original target directory is unlinked.
+#
+# Written by Jan Christoph Uhde
+# linux (at) obiwahn (dot) org
+#
+
+shopt -s nullglob
+shopt -s extglob
+shopt -s nocaseglob
+
+base_dir="$PWD"
+
+#
+# Todo
+# - use file command to get verify the filetype
+# - more and better error messages
+#
+
+for file in "$@"; do
+    case $file in
+        *zip)
+            target_dir="${file%\.zip}"
+            ext_cmd="unzip"
+            ;;
+        *rar)
+            target_dir="${file%\.rar}"
+            ext_cmd="unrar x"
+            ;;
+        *bz2)
+            target_dir="${file%\.bz2}"
+            ext_cmd="tar xjf"
+            ;;
+        *tar.gz)
+            target_dir="${file%\.tar\.gz}"
+            ext_cmd="tar xzf"
+            ;;
+        *.tar)
+            target_dir="${file%\.tar}"
+            ext_cmd="tar xf"
+            ;;
+        *.gz)
+            target_dir="${file%\.gz}"
+            ext_cmd="gunzip"
+            ;;
+        *)
+            echo "unknown format"
+            continue
+            ;;
+    esac
+
+    [[ -f "$file" ]] || continue
+    ext="${file##*\.}"
+
+    multipart=false
+    re=".+(P|p)(A|a)(R|r)(T|t)[0-9]+\\.$ext"
+    if [[ $file =~ $re ]]; then
+        echo "found multipart $ext"
+        multipart=true
+        #prefix is target dir
+        target_dir="${file%\.part*\.$ext}"
+    fi
+
+    echo "taget: $target_dir"
+
+    mkdir "$target_dir" || continue
+
+    if $multipart; then
+        mv_fail=false
+        part_list=()
+        for part in "$target_dir"*"$ext"; do
+            if [[ -f "$part" ]]; then
+                mv "$part" "$target_dir" || { mv_fail=true; continue; }
+                part_list+=( "$part" )
+            fi
+        done
+        $mv_fail && continue
+    else
+        mv "$file" "$target_dir" || continue
+        part_list=( "$file" )
+    fi
+
+    cd "$target_dir" || continue
+    $ext_cmd "$file" || continue
+
+    rm_fail=false
+    for part in "${part_list[@]}"; do
+        rm "$part" || rm_fail=true
+    done
+    $rm_fail && continue
+
+    file_list=(*)
+
+    if [[ ${#file_list[@]} -eq 1 ]]; then
+        ext_dir="${file_list[0]}"
+        if [[ -d "$ext_dir" ]]; then
+            if [[ "$ext_dir" == "$target_dir" ]]; then
+                mv "${file_list[0]}"/* . || continue
+                rm -fr "${file_list[0]}"
+            else
+                mv "$ext_dir" "$base_dir" || continue
+                cd "$base_dir" || continue
+                rm -fr "$target_dir"
+            fi
+        fi
+    fi
+
+    cd "$base_dir"
+done
