@@ -67,12 +67,12 @@ class postimage_links(object):
         if not self.noname:
             full_path = self.full_path + ":\n"
         return  ( full_path  +
-                  "url:   "  + str(self.url)   + "\n" +
-                  "delete: " + str(self.delete) + "\n"
+                  "url:    "  + str(self.url)   + "\n" +
+                  "delete: " + str(self.delete) + "\n\n"
                 )
 
 
-def upload(file_list = None, content = None, 
+def upload(file_list = None, content = None,
            multifile = False, nonames = False,
            deletion_link = False, nolog = True,
            adult_content = "no", link_type = "url",
@@ -89,7 +89,7 @@ def upload(file_list = None, content = None,
         logger.error("you can not read from stdin and files")
         return (None, None)
 
-    request_url = "http://www.postimage.org/index.php"
+    request_url = "http://old.postimage.org/index.php"
     multipart_dict={} #fields in urllib3 terms
     multipart_dict['adult'] = adult_content
 
@@ -117,11 +117,8 @@ def upload(file_list = None, content = None,
     parsed_soup=soup.findAll("textarea")
 
     links = postimage_links(", ".join(file_list))
-    links.url    = parsed_soup[0].string.strip()
-    links.bbcode  = parsed_soup[1].string.strip()
-    links.bbcode2 = parsed_soup[2].string.strip()
-    links.html    = parsed_soup[3].string.strip()
-    links.delete  = parsed_soup[4].string.strip()
+    links.url     = soup.find(id="code_2").string.strip().lstrip()
+    links.delete  = soup.find(id="code_9").string.strip().lstrip()
 
     return links
 
