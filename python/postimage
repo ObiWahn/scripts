@@ -38,7 +38,7 @@ import getopt
 import urllib3 as urllib
 from bs4 import BeautifulSoup
 
-from pprint import pprint  as P
+from pprint import pprint  as PP
 from pprint import pformat as PF
 import traceback
 import logging
@@ -57,18 +57,20 @@ class Internal(Exception):
         self.msg = msg
 
 class postimage_links(object):
-    def __init__(self, full_path, noname=False, url = None, delete = None):
+    def __init__(self, full_path, noname=False, url = None, delete = None, preview = None):
         self.full_path = full_path
         self.noname = noname
         self.url = url
+        self.preview = preview
         self.delete = delete
     def __str__(self):
         full_path = ""
         if not self.noname:
             full_path = self.full_path + ":\n"
         return  ( full_path  +
-                  "url:    "  + str(self.url)   + "\n" +
-                  "delete: " + str(self.delete) + "\n\n"
+                  "url:     "  + str(self.url)     + "\n" +
+                  "preview: "  + str(self.preview) + "\n" +
+                  "delete:  "  + str(self.delete)  + "\n\n"
                 )
 
 
@@ -117,8 +119,16 @@ def upload(file_list = None, content = None,
     parsed_soup=soup.findAll("textarea")
 
     links = postimage_links(", ".join(file_list))
-    links.url     = soup.find(id="code_2").string.strip().lstrip()
+    links.url     = soup.find(id="code_1").string.strip().lstrip()
+    links.preview = soup.find(id="code_2").string.strip().lstrip()
     links.delete  = soup.find(id="code_9").string.strip().lstrip()
+
+    #for i in range(0,10):
+    #    ID="code_"+str(i)
+    #    rv=soup.find(id=ID)
+    #    if rv:
+    #        string = rv.string.strip().lstrip()
+    #        print(str(i) +": " + string)
 
     return links
 
