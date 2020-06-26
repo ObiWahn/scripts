@@ -1,0 +1,358 @@
+#!/bin/bash
+
+# very simple bash script for ripping dvds to mkv files
+requires="mplayer mencoder mkvmerge dvdxchap lsdvd declare"
+
+#set -x
+set -e
+
+dvd_device=/dev/sr0
+tmpdir=/tmp
+outdir=/home/oberon/nobackup/DVDRips
+langdict="en:eng de:ger fr:fre zh:zh ja:ja"
+x264encopts="-ovc x264 -x264encopts bitrate=1600:subq=9:partitions=all:8x8dct:me=umh:frameref=5:bframes=3:b_pyramid=normal:weight_b"
+
+#check if all tools are installed
+#declare is a bash builtin --TODO-- check bash version
+for app in $requires; do
+    if ! type $app &>> /dev/null ;then
+       echo "please install $app"
+       required_missing=1
+    fi
+done
+[[ $required_missing -eq 1 ]] && exit 1
+#--TODO-- check codecs ... mencoder -list-options | grep x264
+
+show_help ()
+{
+    cat << EOF
+
+DVD-TO-MKV
+
+dvd-to-mkv [options] title
+
+Script for ripping DVD'd to disk and watching them
+on devices that do not have an optical drive.
+
+Options:
+    -h | --help
+        show this help
+    -v | --verbose
+        be more verbose
+    -t | --tmp-dir
+        set dir for temporary data
+    -o | --out-dir
+        set dir in which the mkv is created
+    -d | --device
+        set dvd-device
+    -s | --stream
+        select stream to be ripped
+    -c | --crop
+        set crop region manually
+    --dump-only
+        dump vob only
+
+TODO:
+- config file
+- create less files
+- fix ugly code
+- subtitle handling
+
+EOF
+}
+
+crop=
+
+while [[ $1 == -* ]]; do
+    case "$1" in
+        -h|--help|-\?)
+            show_help
+            exit 0
+        ;;
+        -v|--verbose)
+            verbose=1
+            shift
+        ;;
+        -s|--stream)
+            if (($# > 1)); then
+                streamnum=$2
+                shift 2
+            else
+                echo "-s requires an argument" 1>&2
+                exit 1
+            fi
+        ;;
+        -c|--crop)
+            if (($# > 1)); then
+                crop=$2
+                shift 2
+            else
+                echo "-c requires an argument" 1>&2
+                exit 1
+            fi
+        ;;
+        -d|--device)
+            if (($# > 1)); then
+                dvd_device=$2
+                shift 2
+            else
+                echo "-d requires an argument" 1>&2
+                exit 1
+            fi
+        ;;
+        -t|--tmp-dir)
+            if (($# > 1)); then
+                tmpdir=$2
+                shift 2
+            else
+                echo "-t requires an argument" 1>&2
+                exit 1
+            fi
+        ;;
+        -o|--out-dir)
+            if (($# > 1)); then
+                outdir=$2
+                shift 2
+            else
+                echo "-o requires an argument" 1>&2
+                exit 1
+            fi
+        ;;
+        --dump-only)
+            dump_only=true
+            shift
+        ;;
+        -a|--aspect-ratio)
+            if (($# > 1)); then
+                aspect_ratio=$2
+                shift 2
+            else
+                echo "-a requires an argument" 1>&2
+                exit 1
+            fi
+        ;;
+        --)
+            shift
+            break
+        ;;
+        -*)
+            echo "invalid option: $1" 1>&2
+            show_help
+            exit 1
+        ;;
+    esac
+done
+
+
+#Set FileName
+title="default"
+
+if [ "$1" ]; then
+    title="$1"
+    title="${title// /_}"
+else
+    echo "Please give a title as first argument"
+    show_help
+    exit 1
+fi
+name="${title}-DVD.mkv"
+
+cropdetect ()
+{
+set -x
+[ -n "$crop" ] && return
+if [ -e crop ]; then
+    crop=$(cat crop)
+    [ -n $crop ] && return
+fi
+
+echo
+
+total_loops=20
+vf_opts="pp=lb,cropdetect=20:16"
+while [ $((++loop_count)) -le $total_loops ] ; do
+    skip_secs="$(( 35 * $loop_count ))"
+    #nice -n $NICE_PRI nohup
+    printf "\r%s%s" "detecting crop at $skip_secs seconds" "$(tput el)"
+    mplayer $streamnum.video.m2v \
+            -ss $skip_secs \
+            -identify \
+            -frames 20 \
+            -vo md5sum \
+            -ao null \
+            -nocache \
+            -vf ${vf_opts}\
+            &>mplayer.log
+
+    #echo DEBUG ; cat mplayer.log
+
+    CROP[$loop_count]=`awk -F 'crop=' '/crop/ {print $2}' < mplayer.log \
+            | awk -F ')' '{print $1}' \
+            | tail -n 1`
+
+done
+rm md5sums mplayer.log
+
+# bin sort kind of thing --FIXME-- BULLSHIT CODE
+B=0
+while [ "$B" -le "$total_loops" ] ; do
+    B="$(( $B + 1 ))"
+
+    C=0
+    while [ "$C" -le "$total_loops" ] ; do
+        C="$(( $C + 1 ))"
+        if [ "${CROP[$B]}" == "${CROP[$C]}" ] ; then
+            COUNT_CROP[$B]="$(( ${COUNT_CROP[$B]} + 1 ))"
+        fi
+    done
+done
+
+HIGHEST_COUNT=0
+
+#now get the greatest bin
+D=0
+while [ "$D" -le "$total_loops" ] ; do
+    D="$(( $D + 1 ))"
+
+    if [ "${COUNT_CROP[$D]}" -gt "$HIGHEST_COUNT" ] ; then
+        HIGHEST_COUNT="${COUNT_CROP[$D]}"
+        GREATEST="$D"
+    fi
+done
+
+crop=${CROP[$GREATEST]}
+echo "$crop" > crop
+
+echo "crop detection done: crop=$crop"
+}
+
+#--TODO-- check input
+echo
+#create tmpdir
+tmpdir="${tmpdir}/${title}-DVD_RIP"
+if [ ! -e "$tmpdir" ];then
+    mkdir "$tmpdir"
+fi
+cd "$tmpdir"
+
+#get streanum of longest stream - normally the movie
+# --TODO-- force stream option
+if [ -z $streamnum ]; then
+    if [ -e streamtouse ];then
+        streamnum=$(cat streamtouse)
+    fi
+    if [ -z $streamnum ]; then
+        echo -n "Finding longest Track ...                 "
+        streamnum=$(lsdvd $dvd_device 2>>/dev/null | grep "Longest track:" | awk '{print $3}')
+        echo -e "$streamnum \n"
+        echo "$streamnum" > streamtouse
+    fi
+fi
+
+
+#get audio data from stream
+if [ ! -e $streamnum.audio.information ]; then
+    echo "Reading audio information ...                    "
+    lsdvd -t $streamnum -a $dvd_device 2>>/dev/null | grep "Audio: " > $streamnum.audio.information
+fi
+
+if [ ! -e $streamnum.audio.selection ]; then
+    cat  $streamnum.audio.information | tr ',' ' ' | \
+        awk '{print $2 ": - " $21 " - " $3 " " $4 " - " $7 " " $8 " - " $13 " " $14}'
+    echo "Please select the streams you want:"
+    echo "#stream1 #stream2 #stream3 ..."
+    read selection
+    for item in $selection;do
+        sel=$(grep "Audio: $item" $streamnum.audio.information | tr ',' ' ' |awk '{print $4 " " $8 " " $21}')
+        [ -n "$sel" ] && echo "$sel" && echo "$sel" >> $streamnum.audio.selection
+        sel=
+    done
+    echo
+fi
+
+#get chapter information needed by mkvmerge
+if [ ! -e $streamnum.chapters ]; then
+    echo -n "Getting chapter information ...               "
+    dvdxchap -t $streamnum $dvd_device > $streamnum.chapters 2>>/dev/null
+    echo -e "done  -  You might want to edit these\n"
+fi
+
+#dump file from dvd to disk
+if [ ! -e $streamnum.vob ]; then
+    echo -n "Dumping vob to disk ...                       "
+    mplayer dvd://$streamnum -dvd-device "$dvd_device" -dumpstream -dumpfile $streamnum.vob &>>/dev/null
+    echo "done"
+fi
+
+if ${dump_only-false}; then
+    exit 0
+fi
+
+#extract audio data - will be used uncompressed
+while read -r lang format audio_id; do
+    audiofile="$streamnum.audio-$audio_id-$lang.$format"
+    if [ ! -e "$audiofile" ]; then
+        echo -n "Dumping audio stream $audio_id ...                 "
+        mplayer $streamnum.vob -aid $audio_id -dumpaudio -dumpfile "$audiofile" &>>/dev/null
+        echo "done"
+    fi
+done < $streamnum.audio.selection
+
+if [[ -n "$aspect_ratio" ]]; then
+    mplayer_aspect_ratio="-aspect $aspect_ratio"
+fi
+#extract raw video stream - will be compressed
+if [ ! -e $streamnum.video.m2v ]; then
+    echo -n "Extracting raw video stream ...               "
+    mplayer $streamnum.vob -dumpvideo $mplayer_aspect_ratio -dumpfile $streamnum.video.m2v &>>/dev/null
+    echo "done"
+fi
+
+## Convert video to h264
+#firstpass
+if [ ! -e $streamnum.firstpass.video.m2v ]; then
+    #auto cropdetect
+    cropdetect
+    mencoder_options="-vf crop=$crop,scale -of rawvideo "
+    echo -e "\n\nCreating first pass ..."
+    mencoder -o $streamnum.firstpass.video.m2v $mencoder_options $x264encopts:pass=1 $streamnum.video.m2v #2>&1 | \
+    #while read inputline; do printf "\r%s%s" "$inputline" "$(tput el)"; done;
+    echo "done"
+fi
+
+#secondpass - create final video file
+if [ ! -e $streamnum.secondpass.video.m2v ]; then
+    cropdetect
+    echo -e "\n\nCreating second pass ..."
+    mencoder -o $streamnum.secondpass.video.m2v $mencoder_options $x264encopts:pass=2 $streamnum.video.m2v #2>&1 | \
+    #while read inputline; do printf "\r%s%s" "$inputline" "$(tput el)"; done;
+    echo "done"
+fi
+
+
+##merge everything into a mkv
+#create language mapping
+declare -A langmap
+while IFS=: read -d ' ' -r key value; do
+    [[ $key ]] && langmap["$key"]=$value
+done <<< "$langdict "
+
+#--TODO-- audio offset as option
+#build up audio string
+#audio_offset="-y 0:7000 "
+audio_offset=
+mkvmerge_language_string=""
+while read -r lang format audio_id; do
+    audiofile="$streamnum.audio-$audio_id-$lang.$format"
+    mkvmerge_language_string="$mkvmerge_language_string --language 0:${langmap[$lang]} $audio_offset $audiofile"
+done < $streamnum.audio.selection
+
+#do the final merge
+echo -e "\n\nNow doing the final Merge ..."
+if [[ -n $aspect_ratio ]]; then
+    aspect_ratio="${aspect_ratio/://}"
+    mkvmerge_aspect_ratio="--aspect-ratio 0:${aspect_ratio}"
+fi
+set -x
+mkvmerge -o "${outdir}/${name}" --title "$title" --chapters $streamnum.chapters \
+    $mkvmerge_language_string $mkvmerge_aspect_ratio $streamnum.secondpass.video.m2v
